@@ -393,23 +393,21 @@ class ProgramConfiguration {
         let dirty: boolean = false;
         for (const id in featureStates) {
             const posArray = this._idMap[id];
+            if (!posArray) continue;
 
-            if (posArray) {
-                for (let i = 0; i < posArray.length; i++) {
-                    const pos = posArray[i];
-                    const feature: any = vtLayer.feature(pos.index);
-                    feature.state = featureStates[id];
+            for (const pos of posArray) {
+                const feature: any = vtLayer.feature(pos.index);
+                feature.state = featureStates[id];
 
-                    for (const property in this.binders) {
-                        const binder: Binder<any> = this.binders[property];
-                        if (binder instanceof ConstantBinder) continue;
-                        if ((binder: any).expression.isStateDependent === true) {
-                            //AHM: Remove after https://github.com/mapbox/mapbox-gl-js/issues/6255
-                            const value = layer.paint.get(property);
-                            (binder: any).expression = value.value;
-                            binder.updatePaintArray(pos.start, pos.length, feature);
-                            dirty = true;
-                        }
+                for (const property in this.binders) {
+                    const binder: Binder<any> = this.binders[property];
+                    if (binder instanceof ConstantBinder) continue;
+                    if ((binder: any).expression.isStateDependent === true) {
+                        //AHM: Remove after https://github.com/mapbox/mapbox-gl-js/issues/6255
+                        const value = layer.paint.get(property);
+                        (binder: any).expression = value.value;
+                        binder.updatePaintArray(pos.start, pos.length, feature);
+                        dirty = true;
                     }
                 }
             }
@@ -480,9 +478,9 @@ class ProgramConfigurationSet<Layer: TypedStyleLayer> {
 
     updatePaintArrays(featureStates: FeatureStates, vtLayer: VectorTileLayer, layers: $ReadOnlyArray<TypedStyleLayer>): boolean {
         let changed: boolean = false;
-        layers.forEach((layer) => {
+        for (const layer of layers) {
             changed =  changed || this.programConfigurations[layer.id].updatePaintArrays(featureStates, vtLayer, layer);
-        });
+        }
         return changed;
     }
 
