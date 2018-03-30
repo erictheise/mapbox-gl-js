@@ -116,27 +116,42 @@ class CrossTileIDs {
     }
 }
 
-let debug = false;
 class CrossTileSymbolLayerIndex {
     indexes: {[zoom: string | number]: {[tileId: string | number]: TileLayerIndex}};
     bucketInstanceIdIndex: { [bucketInstanceId: number]: OverscaledTileID };
     usedCrossTileIDs: {[zoom: string | number]: {[crossTileID: number]: boolean}};
+    lng: number;
 
     constructor() {
         this.indexes = {};
-        this.bucketInstanceIdIndex = {};
         this.usedCrossTileIDs = {};
+        this.lng = 0;
+    }
+
+    /*
+     * Sometimes when a user pans across the antimeridian the longitude value gets wrapped.
+     * To prevent labels from flashing out and in we adjust the tileID values in the indexes
+     * so that they match the new wrapped version of the map.
+     */
+    handleWrapJump(lng: number) {
+        const wrapDelta = lng - this.lng;
+        if (wrapDelta !== 0) {
+            for (const zoom in this.indexes) {
+                const zoomIndexes = this.indexes[zoom];
+                const newZoomIndex = {};
+                for (const key in zoomIndexes) {
+                    // change the tileID's wrap and add it to a new index
+                    const index = zoomIndexes[key];
+                    index.tileID = index.tileID.unwrapTo(index.tileID.wrap - wrapDelta);
+                    newZoomIndex[index.tileID.key] = index;
+                }
+                this.indexes[zoom] = newZoomIndex;
+            }
+        }
+        this.lng = lng;
     }
 
     addBucket(tileID: OverscaledTileID, bucket: SymbolBucket, crossTileIDs: CrossTileIDs) {
-        const oldTileID = this.bucketInstanceIdIndex[bucket.bucketInstanceId];
-        if (oldTileID && !oldTileID.equals(tileID)) {
-            //console.log("move");
-            this.indexes[tileID.overscaledZ][tileID.key] = this.indexes[oldTileID.overscaledZ][oldTileID.key];
-            delete this.indexes[oldTileID.overscaledZ][oldTileID.key];
-            this.bucketInstanceIdIndex = tileID;
-        }
-
         if (this.indexes[tileID.overscaledZ] &&
             this.indexes[tileID.overscaledZ][tileID.key]) {
             if (this.indexes[tileID.overscaledZ][tileID.key].bucketInstanceId ===
@@ -150,11 +165,8 @@ class CrossTileSymbolLayerIndex {
                 // 'removeStaleBuckets' is called.
                 const removedIndex = this.indexes[tileID.overscaledZ][tileID.key];
                 this.removeBucketCrossTileIDs(tileID.overscaledZ, removedIndex);
-                delete this.bucketInstanceIdIndex[removedIndex.bucketInstanceId];
-                //console.log('here');
             }
         }
-        //if (debug) console.log('add new',bucket.bucketInstanceId);
 
         for (const symbolInstance of bucket.symbolInstances) {
             symbolInstance.crossTileID = 0;
@@ -195,7 +207,6 @@ class CrossTileSymbolLayerIndex {
             this.indexes[tileID.overscaledZ] = {};
         }
         this.indexes[tileID.overscaledZ][tileID.key] = new TileLayerIndex(tileID, bucket.symbolInstances, bucket.bucketInstanceId);
-        this.bucketInstanceIdIndex[bucket.bucketInstanceId] = tileID;
 
         return true;
     }
@@ -217,7 +228,6 @@ class CrossTileSymbolLayerIndex {
                 if (!currentIDs[bucketInstanceId]) {
                     this.removeBucketCrossTileIDs(z, zoomIndexes[tileKey]);
                     delete zoomIndexes[tileKey];
-                    delete this.bucketInstanceIdIndex[bucketInstanceId];
                     tilesChanged = true;
                 }
             }
@@ -237,7 +247,7 @@ class CrossTileSymbolIndex {
         this.maxBucketInstanceId = 0;
     }
 
-    addLayer(styleLayer: StyleLayer, tiles: Array<Tile>) {
+    addLayer(styleLayer: StyleLayer, tiles: Array<Tile>, lng: number) {
         let layerIndex = this.layerIndexes[styleLayer.id];
         if (layerIndex === undefined) {
             layerIndex = this.layerIndexes[styleLayer.id] = new CrossTileSymbolLayerIndex();
@@ -245,7 +255,8 @@ class CrossTileSymbolIndex {
 
         let symbolBucketsChanged = false;
         const currentBucketIDs = {};
-        debug = styleLayer.id === 'country-label-lg';
+
+        layerIndex.handleWrapJump(lng);
 
         for (const tile of tiles) {
             const symbolBucket = ((tile.getBucket(styleLayer): any): SymbolBucket);
@@ -253,7 +264,6 @@ class CrossTileSymbolIndex {
 
             if (!symbolBucket.bucketInstanceId) {
                 symbolBucket.bucketInstanceId = ++this.maxBucketInstanceId;
-                //if (debug) console.log('assign', symbolBucket.bucketInstanceId);
             }
 
             if (layerIndex.addBucket(tile.tileID, symbolBucket, this.crossTileIDs)) {
@@ -261,7 +271,6 @@ class CrossTileSymbolIndex {
             }
             currentBucketIDs[symbolBucket.bucketInstanceId] = true;
         }
-        //if (debug) console.log(currentBucketIDs);
 
         if (layerIndex.removeStaleBuckets(currentBucketIDs)) {
             symbolBucketsChanged = true;

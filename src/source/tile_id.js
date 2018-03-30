@@ -125,6 +125,10 @@ class OverscaledTileID {
         return new OverscaledTileID(this.overscaledZ, 0, this.canonical.z, this.canonical.x, this.canonical.y);
     }
 
+    unwrapTo(wrap: number) {
+        return new OverscaledTileID(this.overscaledZ, wrap, this.canonical.z, this.canonical.x, this.canonical.y);
+    }
+
     overscaleFactor() {
         return Math.pow(2, this.overscaledZ - this.canonical.z);
     }

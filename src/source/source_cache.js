@@ -476,18 +476,14 @@ class SourceCache extends Evented {
         //const remove = util.keysDifference(this._tiles, retain);
         //for (let i = 0; i < remove.length; i++) {
         for (const key in this._prevTiles) {
-            //console.log('tile', this._prevTiles[key]);
             for (const tile of this._prevTiles[key]) {
-                //console.log('remove tile', tile, tile.tileID.key, tile.tileID.wrapped().key);
                 this._removeTile(tile);
             }
         }
 
-        //console.log(this._tiles, this._prevTiles);
     }
 
     _updateRetainedTiles(idealTileIDs: Array<OverscaledTileID>, zoom: number): { [string]: OverscaledTileID} {
-        //console.log('----');
         const retain = {};
         const checked: {[number]: boolean } = {};
         const minCoveringZoom = Math.max(zoom - SourceCache.maxOverzooming, this._source.minzoom);
@@ -496,14 +492,20 @@ class SourceCache extends Evented {
         const prevTiles = this._tiles;
         this._tiles = {};
 
+        const prevCenter = this._prevCenter || this.transform.center;
+        const wrapDelta = Math.round((this.transform.center.lng - prevCenter.lng) / 360);
+
         // Add all ideal tiles that were used for the previous frame.
         // Use unwrapped keys to match on tiles that matche exact wraps.
         for (const tileID of idealTileIDs) {
-            if (prevTiles[tileID.key]) {
-                this._tiles[tileID.key] = prevTiles[tileID.key];
-                delete prevTiles[tileID.key];
+            const matchedKey = tileID.unwrapTo(tileID.wrap - wrapDelta);
+            if (prevTiles[matchedKey]) {
+                this._tiles[tileID.key] = prevTiles[matchedKey];
+                this._tiles[tileID.key].tileID = tileID;
+                delete prevTiles[matchedKey];
             }
         }
+        this._prevCenter = this.transform.center;
 
         this._prevTiles = {};
         for (const key in prevTiles) {
@@ -609,7 +611,6 @@ class SourceCache extends Evented {
 
         tile = this._getPrevTile(tileID);
         if (tile) {
-            //console.log('reuse prev tile', tileID.key);
             this._tiles[tileID.key] = tile;
             return tile;
         }
@@ -618,7 +619,6 @@ class SourceCache extends Evented {
         if (tile) {
             // set the tileID because the cached tile could have had a different wrap value
             tile.tileID = tileID;
-            console.log('reuse cache', tileID.key);
             if (this._cacheTimers[tileID.key]) {
                 clearTimeout(this._cacheTimers[tileID.key]);
                 delete this._cacheTimers[tileID.key];
@@ -628,7 +628,6 @@ class SourceCache extends Evented {
 
         const cached = Boolean(tile);
         if (!cached) {
-            //console.log("LOAD TILE", tileID.key, tileID.wrapped().key, this._tiles, this._prevTiles)
             tile = new Tile(tileID, this._source.tileSize * tileID.overscaleFactor());
             this._loadTile(tile, this._tileLoaded.bind(this, tile, tileID.key, tile.state));
         }
@@ -687,7 +686,6 @@ class SourceCache extends Evented {
         if (tile.hasData()) {
             tile.tileID = tile.tileID.wrapped();
             const wrappedId = tile.tileID.key;
-            console.log('add to cache', wrappedId);
             this._cache.add((wrappedId: any), tile);
             this._setCacheInvalidationTimer(wrappedId, tile);
         } else {
